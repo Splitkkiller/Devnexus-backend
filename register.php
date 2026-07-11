@@ -1,100 +1,65 @@
 <?php
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Allow-Credentials: true");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Content-Type: application/json");
+declare(strict_types=1);
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
+require_once __DIR__ . '/bootstrap.php';
+requirePost();
+require_once __DIR__ . '/db.php';
+
+$data = requestBody();
+$name = trim((string) ($data['name'] ?? ''));
+$email = strtolower(trim((string) ($data['email'] ?? '')));
+$password = (string) ($data['password'] ?? '');
+
+if (strlen($name) < 2 || strlen($name) > 100) {
+    respond(['success' => false, 'message' => 'Name must be between 2 and 100 characters'], 422);
+}
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    respond(['success' => false, 'message' => 'Enter a valid email address'], 422);
+}
+if (strlen($password) < 8) {
+    respond(['success' => false, 'message' => 'Password must be at least 8 characters'], 422);
 }
 
-include "db.php";
-
-$data = json_decode(file_get_contents("php://input"), true);
-
-$name = $data["name"] ?? "";
-$email = $data["email"] ?? "";
-$password = $data["password"] ?? "";
-
-if (!$name || !$email || !$password) {
-    echo json_encode(["success" => false, "message" => "All fields are required"]);
-    exit;
-}
-
-// Hash password
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-
-// Default stats
 $xp = 0;
 $level = 1;
 $coins = 0;
 $quizzesTaken = 0;
-$avgScore = 0;
-$masteredTopicsArr = []; 
-$masteredTopicsJson = json_encode($masteredTopicsArr);
+$avgScore = 0.0;
+$masteredTopics = '[]';
 $loginStreak = 1;
 $quizStreak = 0;
-$now = date("Y-m-d H:i:s");
+$now = date('Y-m-d H:i:s');
 
-// Insert into DB
-$stmt = $conn->prepare("
-    INSERT INTO users 
-    (name, email, password, joined_date, xp, level, coins, quizzesTaken, avgScore, masteredTopics, loginStreak, quizStreak, lastLoginDate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-");
+$stmt = $conn->prepare('INSERT INTO users (name, email, password, joined_date, xp, level, coins, quizzesTaken, avgScore, masteredTopics, loginStreak, quizStreak, lastLoginDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+$stmt->bind_param('ssssiiiidsiis', $name, $email, $passwordHash, $now, $xp, $level, $coins, $quizzesTaken, $avgScore, $masteredTopics, $loginStreak, $quizStreak, $now);
 
-$stmt->bind_param(
-    "ssssiiiiisiis",
-    $name,
-    $email,
-    $passwordHash,
-    $now, // Using the variable instead of NOW() to keep sync with response
-    $xp,
-    $level,
-    $coins,
-    $quizzesTaken,
-    $avgScore,
-    $masteredTopicsJson,
-    $loginStreak,
-    $quizStreak,
-    $now
-);
-
-if ($stmt->execute()) {
-    // Format date for the frontend response (e.g., "January 2026")
-    $joinedDateFormatted = date("F Y", strtotime($now));
-
-    echo json_encode([
-        "success" => true,
-        "user" => [
-            "name" => $name,
-            "email" => $email,
-            "joined_date" => $joinedDateFormatted,
-            "stats" => [
-                "xp" => $xp,
-                "level" => $level,
-                "coins" => $coins,
-                "quizzesTaken" => $quizzesTaken,
-                "avgScore" => $avgScore,
-                "masteredTopics" => $masteredTopicsArr,
-                "loginStreak" => $loginStreak,
-                "quizStreak" => $quizStreak,
-                "lastLoginDate" => $now
-            ]
-        ]
-    ]);
-} else {
-    // Check if error is due to duplicate email
+if (!$stmt->execute()) {
     if ($conn->errno === 1062) {
-        echo json_encode(["success" => false, "message" => "Email already exists"]);
-    } else {
-        echo json_encode(["success" => false, "message" => "Registration failed: " . $conn->error]);
+        respond(['success' => false, 'message' => 'An account already exists for this email address'], 409);
     }
+    error_log('DevNexus registration failed: ' . $conn->error);
+    respond(['success' => false, 'message' => 'Unable to create account'], 500);
 }
-?>
 
+$user = [
+    'id' => $conn->insert_id,
+    'name' => $name,
+    'email' => $email,
+    'joined_date' => $now,
+    'xp' => $xp,
+    'level' => $level,
+    'coins' => $coins,
+    'quizzesTaken' => $quizzesTaken,
+    'avgScore' => $avgScore,
+    'masteredTopics' => $masteredTopics,
+    'loginStreak' => $loginStreak,
+    'quizStreak' => $quizStreak,
+    'lastLoginDate' => $now,
+];
 
-
-
+respond([
+    'success' => true,
+    'token' => createToken((int) $user['id'], false),
+    'user' => userPayload($user),
+], 201);
