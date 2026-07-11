@@ -1,16 +1,23 @@
 <?php
-// Database connection for XAMPP
-$host = "localhost";
-$user = "root";
-$pass = ""; // default XAMPP password is empty
-$dbname = "devnexus";
+declare(strict_types=1);
 
-$conn = new mysqli($host, $user, $pass, $dbname);
+if (!isset($databaseConfig)) {
+    require_once __DIR__ . '/config.php';
+}
+
+$conn = new mysqli(
+    $databaseConfig['host'],
+    $databaseConfig['user'],
+    $databaseConfig['pass'],
+    $databaseConfig['name']
+);
 
 if ($conn->connect_error) {
-    die(json_encode([
-        "success" => false,
-        "message" => "Database connection failed: " . $conn->connect_error
-    ]));
+    error_log('DevNexus database connection failed: ' . $conn->connect_error);
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'message' => 'Database service is unavailable']);
+    exit;
 }
-?>
+
+$conn->set_charset('utf8mb4');

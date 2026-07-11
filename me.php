@@ -1,63 +1,17 @@
 <?php
-require 'vendor/autoload.php';
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
+declare(strict_types=1);
 
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Allow-Credentials: true");
-header("Content-Type: application/json");
+require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/db.php';
 
-include "db.php";
+$userId = authenticatedUserId();
+$stmt = $conn->prepare('SELECT id, name, email, joined_date, xp, level, coins, quizzesTaken, avgScore, masteredTopics, loginStreak, quizStreak, lastLoginDate FROM users WHERE id = ? LIMIT 1');
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
 
-// Get token from header
-$headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? '';
-$token = str_replace('Bearer ', '', $authHeader);
-
-if (!$token) {
-    echo json_encode(["loggedIn" => false]);
-    exit;
+if (!$user) {
+    respond(['loggedIn' => false, 'message' => 'Account not found'], 401);
 }
 
-include "config.php";
-
-try {
-    $decoded = JWT::decode($token, new Key($secretKey, 'HS256'));
-
-    $stmt = $conn->prepare("
-        SELECT name, email, joined_date, xp, level, coins, quizzesTaken, avgScore, masteredTopics, loginStreak, quizStreak, lastLoginDate
-        FROM users WHERE id = ?
-    ");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $user = $stmt->get_result()->fetch_assoc();
-
-    echo json_encode([
-        "loggedIn" => true,
-        "user" => [
-            "name" => $user["name"],
-            "email" => $user["email"],
-            "joined_date" => date("F Y", strtotime($user["joined_date"])),
-            "stats" => [
-                "xp" => (int)$user["xp"],
-                "level" => (int)$user["level"],
-                "coins" => (int)$user["coins"],
-                "quizzesTaken" => (int)$user["quizzesTaken"],
-                "avgScore" => (float)$user["avgScore"],
-                "masteredTopics" => json_decode($user["masteredTopics"]),
-                "loginStreak" => (int)$user["loginStreak"],
-                "quizStreak" => (int)$user["quizStreak"],
-                "lastLoginDate" => $user["lastLoginDate"]
-            ]
-        ]
-    ]);
-
-} catch (Exception $e) {
-    echo json_encode(["loggedIn" => false, "message" => $e->getMessage()]);
-}
-?>
-
-
-
-
+respond(['loggedIn' => true, 'user' => userPayload($user)]);

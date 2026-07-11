@@ -1,46 +1,35 @@
 <?php
-// devnexus-api/reset_password.php
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Content-Type: application/json");
+declare(strict_types=1);
 
-include "db.php";
+require_once __DIR__ . '/bootstrap.php';
+requirePost();
+require_once __DIR__ . '/db.php';
 
-$data = json_decode(file_get_contents("php://input"), true);
-$token = $data['token'] ?? '';
-$newPassword = $data['password'] ?? '';
+$data = requestBody();
+$token = (string) ($data['token'] ?? '');
+$newPassword = (string) ($data['password'] ?? '');
 
-if (empty($token) || empty($newPassword)) {
-    echo json_encode(["success" => false, "message" => "Invalid request"]);
-    exit;
+if ($token === '' || strlen($newPassword) < 8) {
+    respond(['success' => false, 'message' => 'Use a valid reset link and a password of at least 8 characters'], 422);
 }
 
-$token_hash = hash("sha256", $token);
-
-// Find user with this token AND check if token is not expired
-$sql = "SELECT id FROM users WHERE reset_token_hash = ? AND reset_token_expires_at > NOW()";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("s", $token_hash);
+$tokenHash = hash('sha256', $token);
+$stmt = $conn->prepare('SELECT id FROM users WHERE reset_token_hash = ? AND reset_token_expires_at > NOW() LIMIT 1');
+$stmt->bind_param('s', $tokenHash);
 $stmt->execute();
-$result = $stmt->get_result();
+$user = $stmt->get_result()->fetch_assoc();
 
-if ($result->num_rows > 0) {
-    $user = $result->fetch_assoc();
-    $userId = $user['id'];
-
-    // Hash new password
-    $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
-
-    // Update password and clear the token fields
-    $updateStmt = $conn->prepare("UPDATE users SET password = ?, reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id = ?");
-    $updateStmt->bind_param("si", $passwordHash, $userId);
-
-    if ($updateStmt->execute()) {
-        echo json_encode(["success" => true, "message" => "Password updated successfully"]);
-    } else {
-        echo json_encode(["success" => false, "message" => "Failed to update password"]);
-    }
-} else {
-    echo json_encode(["success" => false, "message" => "Token is invalid or expired"]);
+if (!$user) {
+    respond(['success' => false, 'message' => 'This reset link is invalid or expired'], 400);
 }
-?>
+
+$passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
+$updateStmt = $conn->prepare('UPDATE users SET password = ?, reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id = ?');
+$updateStmt->bind_param('si', $passwordHash, $user['id']);
+
+if (!$updateStmt->execute()) {
+    error_log('DevNexus password reset failed: ' . $conn->error);
+    respond(['success' => false, 'message' => 'Unable to update password'], 500);
+}
+
+respond(['success' => true, 'message' => 'Password updated successfully']);

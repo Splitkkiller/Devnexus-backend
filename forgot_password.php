@@ -1,52 +1,34 @@
 <?php
-// devnexus-api/forgot_password.php
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Content-Type: application/json");
+declare(strict_types=1);
 
-include "db.php";
+require_once __DIR__ . '/bootstrap.php';
+requirePost();
+require_once __DIR__ . '/db.php';
 
-$data = json_decode(file_get_contents("php://input"), true);
-$email = $data['email'] ?? '';
+$data = requestBody();
+$email = strtolower(trim((string) ($data['email'] ?? '')));
+$message = 'If an account exists for that email address, a reset link has been sent.';
 
-if (empty($email)) {
-    echo json_encode(["success" => false, "message" => "Email is required"]);
-    exit;
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    respond(['success' => true, 'message' => $message]);
 }
 
-// Check if email exists
-$stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
-$stmt->bind_param("s", $email);
+$stmt = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+$stmt->bind_param('s', $email);
 $stmt->execute();
-$result = $stmt->get_result();
+$user = $stmt->get_result()->fetch_assoc();
 
-if ($result->num_rows > 0) {
-    // Generate a secure token
-    $token = bin2hex(random_bytes(16));
-    $token_hash = hash("sha256", $token);
-    
-    // Set expiry to 1 hour from now
-    $expiry = date("Y-m-d H:i:s", time() + 60 * 60);
+if ($user) {
+    $token = bin2hex(random_bytes(32));
+    $tokenHash = hash('sha256', $token);
+    $expiry = date('Y-m-d H:i:s', time() + 60 * 60);
 
-    // Update DB with token hash and expiry
-    $updateStmt = $conn->prepare("UPDATE users SET reset_token_hash = ?, reset_token_expires_at = ? WHERE email = ?");
-    $updateStmt->bind_param("sss", $token_hash, $expiry, $email);
-    
-    if ($updateStmt->execute()) {
-        // IN PRODUCTION: Send this link via Email using PHPMailer or SendGrid
-        // FOR TESTING: We return it in the JSON so you can see it
-        $resetLink = "http://localhost:3000/reset-password?token=" . $token;
+    $updateStmt = $conn->prepare('UPDATE users SET reset_token_hash = ?, reset_token_expires_at = ? WHERE id = ?');
+    $updateStmt->bind_param('ssi', $tokenHash, $expiry, $user['id']);
+    $updateStmt->execute();
 
-        echo json_encode([
-            "success" => true, 
-            "message" => "Reset link generated (Check console/network tab for link in testing mode)",
-            "debug_link" => $resetLink // Remove this line in production!
-        ]);
-    } else {
-        echo json_encode(["success" => false, "message" => "Database error"]);
-    }
-} else {
-    // For security, don't reveal if email exists or not, just say sent
-    echo json_encode(["success" => true, "message" => "If that email exists, a reset link has been sent."]);
+    // Send the reset URL with a mail provider here. Never return the token in
+    // an API response, even while testing, because it can be logged or cached.
 }
-?>
+
+respond(['success' => true, 'message' => $message]);

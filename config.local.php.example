@@ -1,0 +1,11 @@
+<?php
+// Copy this file to config.local.php and replace the placeholder values.
+// config.local.php is ignored by Git and must never be committed.
+return [
+    'jwt_secret' => 'replace-with-a-random-secret-at-least-32-characters-long',
+    'db_host' => 'localhost',
+    'db_name' => 'devnexus',
+    'db_user' => 'root',
+    'db_pass' => '',
+    'cors_allowed_origins' => 'http://localhost:3000',
+];
