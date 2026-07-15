@@ -8,4 +8,5 @@ return [
     'db_user' => 'root',
     'db_pass' => '',
     'cors_allowed_origins' => 'http://localhost:3000',
+    'gemini_api_key' => 'replace-with-your-gemini-api-key',
 ];

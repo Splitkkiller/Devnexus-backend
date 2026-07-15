@@ -31,3 +31,7 @@ $databaseConfig = [
 
 $origins = setting('CORS_ALLOWED_ORIGINS', $localConfig, 'cors_allowed_origins', 'http://localhost:3000');
 $allowedOrigins = array_values(array_filter(array_map('trim', explode(',', $origins))));
+
+// Only the AI assistant endpoint needs this, so a missing key does not take
+// down the rest of the API — ai_assistant.php checks for it itself.
+$geminiApiKey = setting('GEMINI_API_KEY', $localConfig, 'gemini_api_key');
